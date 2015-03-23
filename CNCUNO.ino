@@ -21,7 +21,7 @@
 #include <avr/eeprom.h>
 #include "switch.h"
 #include "EncoderPolling.h"
-//#include "TimerOne.h"
+
 
 #define ENCODER_USE_INTERRUPTS
 
