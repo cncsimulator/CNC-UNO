@@ -22,7 +22,6 @@
 #include "switch.h"
 #include "EncoderPolling.h"
 
-
 #define ENCODER_USE_INTERRUPTS
 
 #define PIN_SCE   4
@@ -596,7 +595,7 @@ void goAntiClockwise(double x, double y, double i, double j)
 
 	a2 = a2_anticlockwise(a1,a2);
 
-	if(a2<=a1)
+	if(a2<a1)
 		a2+=PI*2;
 
 	double xnow, ynow;
