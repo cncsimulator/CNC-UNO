@@ -1,19 +1,19 @@
 /******************************************************************************************
- * CNC UNO Firmvare Ver 1.0 Beta.
- ******************************************************************************************
- * Copyright (c) ChrisE 2015
- *
- * This file is free software; you can redistribute it and/or modify
- * it under the terms of either the GNU General Public License version 2
- * or the GNU Lesser General Public License version 2.1, both as
- * published by the Free Software Foundation.
- ******************************************************************************************
- * The CNC UNO is a DIY small desktop CNC machine made from
- * wood and 3D printed parts. The machine is controlled by an Arduino Mega 2560.
- * For more information, see project at Instructables.com:
- * For simulation and communication software please visit www.cncsimulator.com
- *
- *****************************************************************************************/
+* CNC UNO Firmvare Ver 1.0 Beta.
+******************************************************************************************
+* Copyright (c) ChrisE 2015
+*
+* This file is free software; you can redistribute it and/or modify
+* it under the terms of either the GNU General Public License version 2
+* or the GNU Lesser General Public License version 2.1, both as
+* published by the Free Software Foundation.
+******************************************************************************************
+* The CNC UNO is a DIY small desktop CNC machine made from
+* wood and 3D printed parts. The machine is controlled by an Arduino Mega 2560.
+* For more information, see project at Instructables.com:
+* For simulation and communication software please visit www.cncsimulator.com
+*
+*****************************************************************************************/
 
 #include "stepper.h"
 #include "LCD_Stuff.h"
@@ -21,6 +21,7 @@
 #include <avr/eeprom.h>
 #include "switch.h"
 #include "EncoderPolling.h"
+#include <sd.h>
 
 #define ENCODER_USE_INTERRUPTS
 
@@ -101,7 +102,7 @@ int lastJogAxis =0;	// 1 = X  2 = Y  3 = Z
 // Setup stepper motors
 Stepper xstepper(XAXIS_STEP_PER_REV,37,35,33,31);
 Stepper ystepper(YAXIS_STEP_PER_REV,43,45,39,41);
-Stepper zstepper(ZAXIS_STEP_PER_REV,47,49,51,53);
+Stepper zstepper(ZAXIS_STEP_PER_REV,47,49,27,29);
 
 int xCurrentSteps = 0;
 int yCurrentSteps = 0;
@@ -562,9 +563,6 @@ void goClockwise(double x, double y, double i, double j)
 
 	a2 = a2_clockwise(a1,a2);
 
-	if(a2>a1)
-		a2-=PI*2;
-
 	double xnow, ynow;
 
 	digitalWrite(LEDRED,1);
@@ -594,9 +592,6 @@ void goAntiClockwise(double x, double y, double i, double j)
 	double r=DistPP(xc,yc,x,y);
 
 	a2 = a2_anticlockwise(a1,a2);
-
-	if(a2<a1)
-		a2+=PI*2;
 
 	double xnow, ynow;
 
@@ -637,14 +632,14 @@ double AnglePP(double x1, double y1, double x2, double y2)
 double a2_clockwise(double a1, double a2)
 {
 	while (a2 < a1) a2 += (PI * 2);
-	while (a2 > a1 - 1e-10) a2 -= (PI * 2);
+	while (a2 > a1 - 1e-15) a2 -= (PI * 2);
 	return a2;
 }
 
 double a2_anticlockwise(double a1, double a2)
 {
 	while (a2 > a1) a2 -= PI * 2;
-	while (a2 < a1 + 1e-10) a2 += PI * 2;
+	while (a2 < a1 + 1e-15) a2 += PI * 2;
 	return (a2);
 }
 
@@ -680,6 +675,9 @@ void WelcomeScreen()
 
 void setup(void)
 {  
+
+	pinMode(53, OUTPUT);	// For the SD module
+
 	while (!eeprom_is_ready());
 	cli();
 
@@ -687,7 +685,7 @@ void setup(void)
 	xZeroSteps = eeprom_read_word((uint16_t*)0);
 	yZeroSteps = eeprom_read_word((uint16_t*)2);
 	zZeroSteps = eeprom_read_word((uint16_t*)4);
-	
+
 	sei();
 
 	pinMode(LEDGREEN, OUTPUT);
@@ -749,6 +747,52 @@ void PrintAxis()
 
 }
 
+void runtFromSD()
+{
+	if (!SD.begin(53)) 
+	{
+		Alarm("SD init fail");
+		return;
+	}
+
+	File cncFile = SD.open("RUN.CNC");
+	if(cncFile)
+	{
+		while(cncFile.available())
+		{
+			handleButtons();
+
+			if(paused)
+			{
+				handleMenu();
+				continue;
+			}
+
+			serialbuf[serialbufpos]=(char)cncFile.read();
+			if(serialbuf[serialbufpos]==13)	// Line complete
+			{
+				serialbuf[serialbufpos+1]=0;
+				Interpret(String(serialbuf));
+
+				serialbufpos=0;
+				if(cncFile.available()  > 0 && !paused)
+				{
+					LcdPos(0,5);
+					LcdPrint("       PAUSE");
+				}
+			}
+			else
+				serialbufpos++;
+		}
+
+
+		cncFile.close();
+	}
+	else
+		Alarm("RUN.CNC missing");
+
+}
+
 void ZeroAll()
 {
 	// Write current pos as zeropos in eeprom
@@ -794,7 +838,7 @@ void handleMenu()
 	{
 	case 0:
 		if(!XZ_jog)
-				LcdPrint("HOME SPNDL >");
+			LcdPrint("HOME SPNDL >");
 		else
 			LcdPrint("HOME SPNDL >");
 		break;
@@ -808,7 +852,7 @@ void handleMenu()
 		LcdPrint("DEMO ABOUT >");
 		break;
 	case 3:
-		LcdPrint("   PAUSE   >");
+		LcdPrint("RUN PAUSE  >");
 		break;
 	}
 
@@ -870,7 +914,9 @@ void handleButtons()
 		}
 		break;
 	case 3:
-		if(BTN(2))
+		if(BTN(1))
+			runtFromSD();
+		else if(BTN(2))
 			paused  = true;
 		else if(BTN(3))
 		{
@@ -896,20 +942,20 @@ void loop(void)
 	{
 		switch (lastJogAxis)
 		{
-			case 1:
-				stepaxis(&xstepper, dir);
-				xCurrentSteps+=dir;
-				break;
-			case 2:
-				stepaxis(&ystepper, dir);
-				yCurrentSteps+=dir;
-				break;
-			case 3:
-				stepaxis(&zstepper,dir);
-				zCurrentSteps+=dir;
-				break;
-			default:
-				break;
+		case 1:
+			stepaxis(&xstepper, dir);
+			xCurrentSteps+=dir;
+			break;
+		case 2:
+			stepaxis(&ystepper, dir);
+			yCurrentSteps+=dir;
+			break;
+		case 3:
+			stepaxis(&zstepper,dir);
+			zCurrentSteps+=dir;
+			break;
+		default:
+			break;
 		}
 	}
 
@@ -927,7 +973,6 @@ void loop(void)
 	}
 
 	handleMenu();
-	//pot = (1024 - analogRead(POT))/10;  // Inverted!
 
 	doJogging();
 	handleButtons();
@@ -955,9 +1000,9 @@ void loop(void)
 			serialbuf[serialbufpos]=(char)Serial.read();
 			if(serialbuf[serialbufpos]==13)	// Line complete
 			{
-				//Serial.write(19);  // XOFF
+				Serial.write(19);  // XOFF
 				Serial.write("OK\r") ;
-				
+
 
 				serialbuf[serialbufpos+1]=0;
 				Serial.print(serialbuf);
@@ -999,9 +1044,15 @@ void Interpret(String block)
 	}
 
 	if(block.indexOf("M03")!=-1)
+	{
 		digitalWrite(SPINDLEPIN,1);
+		delay(500);
+	}
 	else if(block.indexOf("M04")!=-1)
+	{
 		digitalWrite(SPINDLEPIN,1);
+		delay(500);
+	}
 	else if(block.indexOf("M05")!=-1)
 		digitalWrite(SPINDLEPIN,0);
 	else if(block.indexOf("M30")!=-1)
@@ -1265,7 +1316,7 @@ void stepaxis(Stepper *stepper, int steps)
 {
 	// F and FZ is in mm/min
 	int cfxy, cfz;
-	
+
 	for(int s = 0; s< abs(steps); s++)
 	{
 		feedoverride = map(analogRead(POT), 1024, 0, 5,20)/10.0;
@@ -1287,7 +1338,7 @@ void stepaxis(Stepper *stepper, int steps)
 
 static inline int8_t sgn(int val) 
 {
- if (val < 0) return -1;
- if (val==0) return 0;
- return 1;
+	if (val < 0) return -1;
+	if (val==0) return 0;
+	return 1;
 }
