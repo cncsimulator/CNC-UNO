@@ -15,13 +15,13 @@
 *
 *****************************************************************************************/
 
-#include "stepper.h"
+#include "Stepper.h"
 #include "LCD_Stuff.h"
 #include <math.h>
 #include <avr/eeprom.h>
 #include "switch.h"
 #include "EncoderPolling.h"
-#include <sd.h>
+#include <SD.h>
 
 #define ENCODER_USE_INTERRUPTS
 
